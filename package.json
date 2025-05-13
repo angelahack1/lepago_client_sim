@@ -1,0 +1,26 @@
+{
+  "name": "lepago_client_sim",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.cjs",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.cjs",
+    "dev": "nodemon index.cjs",
+    "build": "tsc",
+    "clean": "rm -rf node_modules package-lock.json"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "fs": "^0.0.1-security",
+    "mlkem": "^2.3.1",
+    "soap": "^1.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "nodemon": "^3.1.10",
+    "typescript": "^5.8.3"
+  }
+}
