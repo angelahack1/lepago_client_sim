@@ -9,13 +9,6 @@ const { ProofOfWork } = require('./pow/proofofwork');
 const {
   WSDL_SERVICE_PORT,
   EXECUTOR_URL,
-  CLIENT_ID,
-  CLIENT_SECRET,
-  AUTH_SERVER_URL,
-  REALM,
-  USERNAME,
-  PASSWORD,
-  SHARED_SECRET_CHALLENGE
 } = process.env;
 
 async function main() {
@@ -24,7 +17,7 @@ async function main() {
     const executorUrl = process.env.EXECUTOR_URL;
     console.log('executorUrl', executorUrl);
     console.log('wsdlUrl', wsdlUrl);
-    const alias = 'blackangel';
+    var alias = '';
     if (!wsdlUrl) {
       console.error('Error: WSDL_SERVICE_PORT environment variable is not set.');
       process.exit(1);
@@ -35,34 +28,33 @@ async function main() {
     console.log('SOAP client created successfully.');
     const description = client.describe();
     console.log('Service description:', JSON.stringify(description, null, 2));
-
-    //If the files do not exist, generate new keys
     const kem = new MlKem1024();
     client.setEndpoint(executorUrl);
 
-    //Read from files for reanimation..
-    //Detectar si existe el archivo decryptedSharedSecret.txt
-    if (fs.existsSync('decryptedSharedSecret.txt') && fs.existsSync('privateKey.txt') && fs.existsSync('publicKey.txt') && fs.existsSync('idc.txt')) {
+    //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Reanimating <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    if (fs.existsSync('decryptedSharedSecret.txt') && fs.existsSync('privateKey.txt') && fs.existsSync('publicKey.txt') && fs.existsSync('idc.txt') && fs.existsSync('alias.txt')) {
+      console.log('Reanimation detected');
       const decryptedSharedSecretReanimation = fs.readFileSync('decryptedSharedSecret.txt', 'utf8');
       const privateKeyReanimation = fs.readFileSync('privateKey.txt', 'utf8');
       const publicKeyReanimation = fs.readFileSync('publicKey.txt', 'utf8');
       const idcReanimation = fs.readFileSync('idc.txt', 'utf8');
-
+      alias = fs.readFileSync('alias.txt', 'utf8');
       const unencodedSharedSecret = Buffer.from(decryptedSharedSecretReanimation, 'base64');
       const unencodedPrivateKey = Buffer.from(privateKeyReanimation, 'base64');
       const unencodedPublicKey = Buffer.from(publicKeyReanimation, 'base64');
-
       console.log('Reanimation detected');
       console.log('decryptedSharedSecretReanimation: ', decryptedSharedSecretReanimation);
       console.log('privateKeyReanimation: ', privateKeyReanimation);
       console.log('publicKeyReanimation: ', publicKeyReanimation);
       console.log('idcReanimation: ', idcReanimation);
 
+      console.log('Abput to connect...');
       const loginReqResp = await new Promise((resolve, reject) => {
       client.LepagoService.LepagoPort.loginReq({
         login_name: alias,
         idc: idcReanimation
       }, (err, result, rawResponse, soapHeader, rawRequest) => {
+        console.error('An error occurred:', err);
         resolve(result);
       });
     });
@@ -72,6 +64,7 @@ async function main() {
     const proofOfWork = new ProofOfWork(loginReqResp.challenge, 4);
     const proofOfWorkResult = proofOfWork.mine();
     console.log('Proof of work result:', proofOfWorkResult);
+    //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Not reanimating <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     } else {
       const [publicKey, privateKey] = await kem.generateKeyPair();
       console.log('ML-KEM key pair generated successfully');
@@ -79,8 +72,9 @@ async function main() {
       let privateKeyEncoded = Buffer.from(privateKey).toString('base64');
       console.log(publicKeyEncoded);
       console.log(privateKeyEncoded);
-  
-    const loginRegResponse = await new Promise((resolve, reject) => {
+      
+      alias = 'angelahack1';
+      const loginRegResponse = await new Promise((resolve, reject) => {
       client.LepagoService.LepagoPort.loginReg({
         login_name: alias,
         pubkey: publicKeyEncoded
@@ -117,6 +111,7 @@ async function main() {
     fs.writeFileSync('publicKey.txt', publicKeyEncoded); 
     fs.writeFileSync('idc.txt', loginRegResponse.idc); 
     fs.writeFileSync('proofOfWorkResult.txt', proofOfWorkResult);
+    fs.writeFileSync('alias.txt', alias); 
   }
 
   } catch (error) {
