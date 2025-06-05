@@ -1,4 +1,5 @@
 const dotenv = require('dotenv');
+const crypto = require('crypto');
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true }); 
 const soap = require('soap');
@@ -43,9 +44,9 @@ async function main() {
       const unencodedPrivateKey = Buffer.from(privateKeyReanimation, 'base64');
       const unencodedPublicKey = Buffer.from(publicKeyReanimation, 'base64');
       console.log('Reanimation detected');
-      console.log('decryptedSharedSecretReanimation: ', decryptedSharedSecretReanimation);
-      console.log('privateKeyReanimation: ', privateKeyReanimation);
-      console.log('publicKeyReanimation: ', publicKeyReanimation);
+      console.log('decryptedSharedSecretReanimation: ', unencodedSharedSecret);
+      console.log('privateKeyReanimation: ', unencodedPrivateKey);
+      console.log('publicKeyReanimation: ', unencodedPublicKey);
       console.log('idcReanimation: ', idcReanimation);
 
       console.log('Abput to connect...');
@@ -64,6 +65,43 @@ async function main() {
     const proofOfWork = new ProofOfWork(loginReqResp.challenge, 4);
     const proofOfWorkResult = proofOfWork.mine();
     console.log('Proof of work result:', proofOfWorkResult);
+    const unencodedProofOfWorkResult = Buffer.from(proofOfWorkResult.hash, 'hex');
+    // Create an initialization vector (IV)
+    const iv = crypto.randomBytes(16);
+    // Create cipher using AES-256-GCM with the shared secret as key
+    const cipher = crypto.createCipheriv('aes-256-gcm', unencodedSharedSecret.slice(0, 32), iv);
+    // Encrypt the proof of work hash
+    const encryptedData = Buffer.concat([
+      cipher.update(unencodedProofOfWorkResult),
+      cipher.final()
+    ]);
+    // Get the authentication tag
+    const authTag = cipher.getAuthTag();
+    // Combine IV, encrypted data, and auth tag
+    const cryptedHash = Buffer.concat([iv, encryptedData, authTag]).toString('base64');
+    console.log('cryptedHash:', cryptedHash);
+    //Send the ciphertext to the server
+    const challengeRespAckStatus = await new Promise((resolve, reject) => {
+      client.LepagoService.LepagoPort.challengeResp({
+        idc: idcReanimation,
+        crypted_hash: cryptedHash
+      }, (err, result, rawResponse, soapHeader, rawRequest) => {
+        if (err) {
+          if (err.root && err.root.Envelope && err.root.Envelope.Body && err.root.Envelope.Body.Fault) {
+            console.error('SOAP Fault:', JSON.stringify(err.root.Envelope.Body.Fault, null, 2));
+            return reject(new Error(err.root.Envelope.Body.Fault.faultstring || 'SOAP Fault occurred'));
+          }
+          return reject(err);
+        }
+        resolve(result);
+      });
+    });
+    console.log('Challenge response status:', challengeRespAckStatus);
+    if (challengeRespAckStatus.status === 'OK') {
+      console.log('Challenge response successful');
+    } else {
+      console.log('Challenge response failed');
+    }
     //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Not reanimating <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     } else {
       const [publicKey, privateKey] = await kem.generateKeyPair();
@@ -121,5 +159,31 @@ async function main() {
     }
   }
 }
+
+function decryptWithSharedSecret(encryptedData, sharedSecret) {
+    // Convert base64 string back to buffer
+    const encryptedBuffer = Buffer.from(encryptedData, 'base64');
+    
+    // Extract IV (first 16 bytes), encrypted data, and auth tag
+    const iv = encryptedBuffer.slice(0, 16);
+    const authTag = encryptedBuffer.slice(-16);
+    const encryptedContent = encryptedBuffer.slice(16, -16);
+    
+    // Create decipher using AES-256-GCM
+    const decipher = crypto.createDecipheriv('aes-256-gcm', sharedSecret.slice(0, 32), iv);
+    decipher.setAuthTag(authTag);
+    
+    // Decrypt the data
+    const decrypted = Buffer.concat([
+        decipher.update(encryptedContent),
+        decipher.final()
+    ]);
+    
+    return decrypted;
+}
+
+// Example usage:
+// const decryptedData = decryptWithSharedSecret(cryptedHash, unencodedSharedSecret);
+// console.log('Decrypted data:', decryptedData.toString('hex'));
 
 main();
