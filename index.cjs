@@ -40,11 +40,11 @@ async function main() {
       const publicKeyReanimation = fs.readFileSync('publicKey.txt', 'utf8');
       const idcReanimation = fs.readFileSync('idc.txt', 'utf8');
       alias = fs.readFileSync('alias.txt', 'utf8');
-      const unencodedSharedSecret = Buffer.from(decryptedSharedSecretReanimation, 'base64');
+      const unencodedDecryptedSharedSecret = Buffer.from(decryptedSharedSecretReanimation, 'base64');
       const unencodedPrivateKey = Buffer.from(privateKeyReanimation, 'base64');
       const unencodedPublicKey = Buffer.from(publicKeyReanimation, 'base64');
       console.log('Reanimation detected');
-      console.log('decryptedSharedSecretReanimation: ', unencodedSharedSecret);
+      console.log('decryptedSharedSecretReanimation: ', unencodedDecryptedSharedSecret);
       console.log('privateKeyReanimation: ', unencodedPrivateKey);
       console.log('publicKeyReanimation: ', unencodedPublicKey);
       console.log('idcReanimation: ', idcReanimation);
@@ -69,7 +69,7 @@ async function main() {
     // Create an initialization vector (IV)
     const iv = crypto.randomBytes(16);
     // Create cipher using AES-256-GCM with the shared secret as key
-    const cipher = crypto.createCipheriv('aes-256-gcm', unencodedSharedSecret.slice(0, 32), iv);
+    const cipher = crypto.createCipheriv('aes-256-gcm', unencodedDecryptedSharedSecret.slice(0, 32), iv);
     // Encrypt the proof of work hash
     const encryptedData = Buffer.concat([
       cipher.update(unencodedProofOfWorkResult),
@@ -111,7 +111,7 @@ async function main() {
       console.log(publicKeyEncoded);
       console.log(privateKeyEncoded);
       
-      alias = 'angelahack1';
+      alias = 'cosapi';
       const loginRegResponse = await new Promise((resolve, reject) => {
       client.LepagoService.LepagoPort.loginReg({
         login_name: alias,
@@ -133,23 +133,61 @@ async function main() {
     console.log('Login response ciphertext:', loginRegResponse.ciphertext);
     console.log('Login response challenge:', loginRegResponse.challenge);
     const undecodedCipherText = Buffer.from(loginRegResponse.ciphertext, 'base64');
-    const decryptedSharedSecret = await kem.decap(undecodedCipherText, privateKey);
+    const undecodedDecryptedSharedSecret = await kem.decap(undecodedCipherText, privateKey);
     console.log('Decapsulation successful');
-    console.log('DecryptedSharedSecret (from encap) type:', typeof decryptedSharedSecret, 'is Buffer?', Buffer.isBuffer(decryptedSharedSecret), 'Length:', decryptedSharedSecret ? decryptedSharedSecret.length : 'N/A');
-    let encodedDecryptedSharedSecret = Buffer.from(decryptedSharedSecret).toString('base64');
+    console.log('UndecodedDecryptedSharedSecret (from encap) type:', typeof undecodedDecryptedSharedSecret, 'is Buffer?', Buffer.isBuffer(undecodedDecryptedSharedSecret), 'Length:', undecodedDecryptedSharedSecret ? undecodedDecryptedSharedSecret.length : 'N/A');
+    let encodedDecryptedSharedSecret = Buffer.from(undecodedDecryptedSharedSecret).toString('base64');
     console.log('Encoded decrypted shared secret:', encodedDecryptedSharedSecret);
 
     const proofOfWork = new ProofOfWork(loginRegResponse.challenge, 4);
     const proofOfWorkResult = proofOfWork.mine();
     console.log('Proof of work result:', proofOfWorkResult);
+    const unencodedProofOfWorkResult = Buffer.from(proofOfWorkResult.hash, 'hex');
+    console.log('unencodedProofOfWorkResult:', unencodedProofOfWorkResult);
 
     //Write to files for reanimation..
     fs.writeFileSync('decryptedSharedSecret.txt', encodedDecryptedSharedSecret);
     fs.writeFileSync('privateKey.txt', privateKeyEncoded);
     fs.writeFileSync('publicKey.txt', publicKeyEncoded); 
     fs.writeFileSync('idc.txt', loginRegResponse.idc); 
-    fs.writeFileSync('proofOfWorkResult.txt', proofOfWorkResult);
     fs.writeFileSync('alias.txt', alias); 
+
+     // Create an initialization vector (IV)
+     const iv = crypto.randomBytes(16);
+     // Create cipher using AES-256-GCM with the shared secret as key
+     const cipher = crypto.createCipheriv('aes-256-gcm', undecodedDecryptedSharedSecret.slice(0, 32), iv);
+     // Encrypt the proof of work hash
+     const encryptedData = Buffer.concat([
+       cipher.update(unencodedProofOfWorkResult),
+       cipher.final()
+     ]);
+     // Get the authentication tag
+     const authTag = cipher.getAuthTag();
+     // Combine IV, encrypted data, and auth tag
+     const cryptedHash = Buffer.concat([iv, encryptedData, authTag]).toString('base64');
+     console.log('cryptedHash:', cryptedHash);
+     //Send the ciphertext to the server
+    const challengeRespAckStatus = await new Promise((resolve, reject) => {
+      client.LepagoService.LepagoPort.challengeResp({
+        idc: loginRegResponse.idc,
+        crypted_hash: cryptedHash
+      }, (err, result, rawResponse, soapHeader, rawRequest) => {
+        if (err) {
+          if (err.root && err.root.Envelope && err.root.Envelope.Body && err.root.Envelope.Body.Fault) {
+            console.error('SOAP Fault:', JSON.stringify(err.root.Envelope.Body.Fault, null, 2));
+            return reject(new Error(err.root.Envelope.Body.Fault.faultstring || 'SOAP Fault occurred'));
+          }
+          return reject(err);
+        }
+        resolve(result);
+      });
+    });
+    console.log('Challenge response status:', challengeRespAckStatus);
+    if (challengeRespAckStatus.status === 'OK') {
+      console.log('Challenge response successful');
+    } else {
+      console.log('Challenge response failed');
+    }
   }
 
   } catch (error) {
