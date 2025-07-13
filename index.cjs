@@ -115,7 +115,7 @@ async function main() {
       const loginRegResponse = await new Promise((resolve, reject) => {
       client.LepagoService.LepagoPort.loginReg({
         login_name: alias,
-        pubkey: publicKeyEncoded
+        public_key: publicKeyEncoded
       }, (err, result, rawResponse, soapHeader, rawRequest) => {
         if (err) {
           if (err.root && err.root.Envelope && err.root.Envelope.Body && err.root.Envelope.Body.Fault) {
@@ -133,7 +133,7 @@ async function main() {
     console.log('Login response ciphertext:', loginRegResponse.ciphertext);
     console.log('Login response challenge:', loginRegResponse.challenge);
     const undecodedCipherText = Buffer.from(loginRegResponse.ciphertext, 'base64');
-    const undecodedDecryptedSharedSecret = await kem.decap(undecodedCipherText, privateKey);
+    const undecodedDecryptedSharedSecret = await kem.decap(undecodedCipherText, privateKey);  //Decrypt of ciphertext!!! -> sharedSecret.
     console.log('Decapsulation successful');
     console.log('UndecodedDecryptedSharedSecret (from encap) type:', typeof undecodedDecryptedSharedSecret, 'is Buffer?', Buffer.isBuffer(undecodedDecryptedSharedSecret), 'Length:', undecodedDecryptedSharedSecret ? undecodedDecryptedSharedSecret.length : 'N/A');
     let encodedDecryptedSharedSecret = Buffer.from(undecodedDecryptedSharedSecret).toString('base64');
